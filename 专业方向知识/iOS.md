@@ -67,9 +67,7 @@ objc_msgSend通过receiver自身类型的 **isa指针** 在类中进行方法查
   + C++允许多重继承，
 
     ```cpp
-    class A : public B, 
-              public C, 
-              public D {
+    class A : public B, public C, public D {
         // 
     };
     ```
@@ -101,6 +99,8 @@ objc_msgSend通过receiver自身类型的 **isa指针** 在类中进行方法查
     Person *p3 = new(bytes) Person;
     ```
 
+  + OC调用方法是消息传递机制，因此向空指针(nil)发送消息不会报错，而在C++中会崩溃
+  + OC有一套运行时系统，可以在运行期间获取类的相关信息(类名等)，C++不行
   + C++允许重载方法，OC不行
   + ARC(自动引用计数)是OC内存管理的 **特性** ，但在C++中只是众多 **工具** 中的一套
   + C++传递对象时可以值传递、引用传递、指针传递、所有权传递，OC只能指针传递
@@ -109,7 +109,8 @@ objc_msgSend通过receiver自身类型的 **isa指针** 在类中进行方法查
 #### 2.2 定义和实现
 
 + **@interface**
-类的定义，也被称为 **接口** ，在 **.h文件** 中编写时，可以定义 **公有** 的属性(property)和方法(method)，也可以使用限定符 *@public* 、 *@private* 、 *@protected* 和 *@package* 手动指定成员变量(ivar)的访问控制。
+类的定义，也被称为 **接口** 。所有的类都继承自NSObject。
+在 **.h文件** 中编写时，可以定义 **公有** 的属性(property)和方法(method)，也可以使用限定符 *@public* 、 *@private* 、 *@protected* 和 *@package* 手动指定成员变量(ivar)的访问控制。
 <br>
 
 + **@implementation**
@@ -117,7 +118,7 @@ objc_msgSend通过receiver自身类型的 **isa指针** 在类中进行方法查
 <br>
 
     ><font color=PaleVioletRed>注意</font>
-    >OC并没有真正意义上的 **私有** 属性和方法，所谓的 **公有** 是通过 **.h文件** 暴露出去的，因此在 **.m文件** 中，不管使用什么限定符来修饰新定义的成员变量，它都是 **私有** 的。
+    >OC并没有真正意义上的 **私有** 属性和方法，所谓的 **公有** 属性和方法是通过 **.h文件** 暴露出去的，因此在 **.m文件** 中，不管使用什么限定符来修饰新定义的成员变量，它都是 **私有** 的。
 
 ---
 
