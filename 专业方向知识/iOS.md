@@ -314,7 +314,7 @@ union isa_t
 }
 ```
 
-当 `nonpointer` 为 `0`时，表明是未经过优化的，对象的引用计数直接存放在 `SideTable` 中。
+当 `nonpointer` 为 `0` 时，表明是未经过优化的，对象的引用计数直接存放在 `SideTable` 中。
 
 当 `nonpointer` 为 `1` 时，表明是经过优化的，对象的引用计数优先存储在 `extra_rc` 中，最多可以存储 $2^{19}=524288$ 次计数，当 `extra_rc` 存放不下时，将 `has_sidetable_rc` 置1，使用 `SideTable` 存放更多的计数。
 
