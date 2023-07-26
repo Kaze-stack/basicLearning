@@ -143,7 +143,7 @@ objc_msgSend通过receiver自身类型的 `isa指针` 在类中进行方法查�
 
 | 属性名 | 属性类型 | 用途 |
 | :------: | :------: |:-------|
-| atomic    | 线程安全 | 默认，对ivar的访问为原子操作，线程安全但耗费系统资源，不建议使用 |
+| atomic | 线程安全 | 默认，对ivar的访问为原子操作，线程安全但耗费系统资源，不建议使用 |
 | nonatomic | 线程安全 | 对ivar的访问为非原子操作，线程不安全但访问效率高 |
 | readwrite | 读写 | 默认，生成getter/setter方法 |
 | readonly | 读写 | 只读，仅生成getter方法，但可以通过KVC修改 |
@@ -365,8 +365,8 @@ int main(int argc, const char * argv[]) {
     [obj2 autorelease];
 
     // 销毁自动释放池
-    // obj2 和 obj1 被 release
     [pool drain];
+    // obj2 和 obj1 被 release
     return 0;
 }
 ```
@@ -391,14 +391,132 @@ int main(int argc, const char * argv[]) {
 }
 ```
 
+><font color=PaleVioletRed>注意</font>
+>自动释放池中对象的释放不单单是受到自动释放池销毁的控制，有时还要考虑到Runloop迭代对自动释放池的影响。
+>详见 [Runloop](#6-runloop) 一节。
+
 #### 3.3 自动引用计数(ARC)
 
 `ARC` 只是比 `MRC` 多了一步，在编译期编译器自动添加 `retain` 、 `release` 和 `autorelease` 的调用，底层的内存管理机制还是和 `MRC` 一样。
-因此，在ARC环境下进行编写时，以上三种方法是不能调用的。
+因此，在ARC环境下进行编写时，以上三种方法是不能调用的，使用 `@selector()` 间接调用也不行。
+
+##### 3.3.1 __strong
+
+在ARC环境下，所有的指针默认为strong类型，即强引用，指向对象时引用计数+1。
+
+##### 3.3.2 __weak
+
+即弱引用，指向对象时，引用计数不会变化，当对象销毁时，weak指针会自动置 `nil` 。
+
+###### 原理
+
++ 底层维护了一张 `weak_table_t` 结构的hash表，key是所指对象的地址，value是weak指针的地址数组 `weak_entry_t` 。
++ `weak_entry_t` 在存储的弱引用的个数小于4的时候，使用的是内联数组 `inline_referrers[]` ，每次需要删除某一个弱引用时，都会对数组进行遍历，查找到该引用进行置 `nil` ，需要添加时，会遍历此数组，看有没有空位，若有就赋值，若没有就代表此内联的数组已经满了，把内联数组转成哈希表，哈希表的默认长度为8。 `weak_entry_t` 中 `out_of_line_ness` 用来标记是否使用内联数组。
++ 对象释放时，若存在弱引用，调用 `weak_clear_no_lock(weak_table_t *weak_table, id referent_id)` 根据对象地址获取所有weak指针的地址数组 `weak_entry` ，然后遍历这个数组把其中的数据设为 `nil` ，最后把这个 `weak_entry` 从 `weak_table` 中删除，最后清理对象的记录。
+
+![ARC_weak](img/ARC_weak.svg)
 
 #### 3.4 循环引用
 
+#### 3.4.1 类之间相互引用
+
+由于OC中指针默认为强引用，如果类之间存在引用关系，就可能产生下面这种循环引用，表面上指针已经置 `nil` ，但实际上各自的引用计数为 `1` ，对象所占的空间无法释放，造成内存泄漏。
+![RetainCycle](img/RetainCycle.svg)
+
+可以使用 `__weak` 或 `__unsafe_retained` 来解决类之间的循环引用，但考虑到编写程序时的安全性，还是推荐使用 `__weak` 。
+![RetainCycle_solve](img/RetainCycle_solve.svg)
+
+#### 3.4.2 block内的self引用
+
+若类存在block属性，且block中有 `self` 的强引用时，也会产生循环引用。
+![RetainCycle_block](img/RetainCycle_block.svg)
+
+为了解决这个问题，可以传一份 `self` 的弱引用进入block：
+
+```objective-c
+__weak typeof(self) weakSelf = self;
+self.block = ^{
+    [weakSelf doSomthing];
+};
+```
+
+当然这样写也有可能出问题，因为 `weakSelf` 是弱引用， `self` 一旦释放了， `weakSelf` 就会置 `nil` ，如果有些任务是需要在对象销毁前完成，就需要这样：
+
+```objective-c
+__weak typeof(self) weakSelf = self;
+self.block = ^{
+    __strong typeof(self) self = weakSelf;
+    [self doSomthing];
+};
+```
+
+考虑到易读性和效率， **RAC** (Reactive Cocoa) 给出了一对宏，可以快速达到上面的效果：
+
+```objective-c
+@weakify(self);
+self.block = ^{
+    @strongify(self);
+    [self doSomthing];
+};
+```
+
 ### 4 Block
+
+> 可以对比阅读Swift的 闭包 部分
+
+#### 4.1 Block概念
+
+与其他函数中的lambda/匿名函数/闭包类似，OC中的block也是一种可以捕获上下文中变量的无名函数体。
+block的形式如下：
+
+```objective-c
+返回类型 (^block名称)(参数类型列表) = ^(参数列表){ 函数内容 };
+
+// 例
+int x = 2;
+void (^pBlock)(int) = ^(int num){ printf("%d", num + x); };
+// 打印 4
+pBlock(2);
+```
+
+#### 4.2 Block捕获
+
+为了保证block内部能正常访问外部上下文中的变量，block有个变量捕获机制：
+
+| 变量类型 | 是否捕获 | 捕获方式 |
+| :------: | :------: | :------: |
+| 全局变量 | 否 | 直接访问 |
+| 局部auto | 是 | 值 |
+| 局部static | 是 | 指针 |
+
+局部auto变量被捕获进block后，是 `const` 修饰的，如果想让局部auto变量在block内部也能修改的话，可以在声明变量时加上 `__block` 前缀。
+
+```objective-c
+int a = 3;
+void (^pBlock)() = ^{ a = 2; };
+// Error: Variable is not assignable
+
+__block int b = 3;
+void (^qBlock)() = ^{ b = 2; };
+qBlock();
+// b = 2;
+```
+
+#### 4.3 Block本质
+
+block本质上也是一个OC对象，它内部也有个isa指针，它封装了函数调用以及函数调用环境。
+block的底层结构如下图所示：
+![Block_DS](img/Block_DS.svg)
+
+#### 4.4 Block类型
+
+block有3种类型， `__NSGlobalBlock__` 、 `__NSStackBlock__` 、 `__NSMallocBlock__` ，最终都是继承自 `NSBlock` 类型。
+
+| 类型 | 存放位置 | 如何判定 | copy返回值 |
+| :------: | :------: | :------: | :------- |
+| \_\_NSGlobalBlock\_\_ | 数据区 | 没有捕获局部auto变量 | 自身(单例) |
+| \_\_NSStackBlock\_\_ | 栈区 | 捕获了局部auto变量，block执行完就销毁 | 在堆上的一份复制 |
+| \_\_NSMallocBlock\_\_ | 堆区 | 1、捕获了局部auto变量，赋给了block指针<br>2、作为Cocoa API/GCD API的参数 | 自身强引用，引用计数+1 |
 
 ### 5 多线程
 
