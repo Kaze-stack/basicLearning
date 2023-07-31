@@ -408,7 +408,7 @@ int main(int argc, const char * argv[]) {
 
 即弱引用，指向对象时，引用计数不会变化，当对象销毁时，weak指针会自动置 `nil` 。
 
-###### 原理
+###### __weak原理
 
 + 底层维护了一张 `weak_table_t` 结构的hash表，key是所指对象的地址，value是weak指针的地址数组 `weak_entry_t` 。
 + `weak_entry_t` 在存储的弱引用的个数小于4的时候，使用的是内联数组 `inline_referrers[]` ，每次需要删除某一个弱引用时，都会对数组进行遍历，查找到该引用进行置 `nil` ，需要添加时，会遍历此数组，看有没有空位，若有就赋值，若没有就代表此内联的数组已经满了，把内联数组转成哈希表，哈希表的默认长度为8。 `weak_entry_t` 中 `out_of_line_ness` 用来标记是否使用内联数组。
@@ -550,12 +550,12 @@ iOS中提供了4种多线程的解决方案：
 ##### 5.3.1 基本概念
 
 + `block` ：任务，队列的调度单位
-+ `queue` ：队列，负责调度任务，底层会维护一个线程池，将任务提交给线程执行
-+ `mainQueue` ：主队列，可以理解为主线程处理任务的队列
-+ `globalQueue` ：全局队列，进程内共享的并发队列，不能使用barrier
++ `queue` ：队列，负责调度任务， **不执行任务** ，底层会维护一个线程池，将任务提交给线程执行
++ `mainQueue` ：主队列，可以理解为主线程的任务队列
++ `globalQueue` ：全局队列，进程内共享的并发队列，由于队列内含有系统调用，不能使用barrier进行阻塞
 + `serialQueue` ：串行队列，维护的线程池中只有一个线程
-+ `concurrentQueue` ：并发队列，维护的线程池中有多个线程，可以使用barrier
-+ `group` ：队列组，可以对多条队列进行集中管理
++ `concurrentQueue` ：并发队列，维护的线程池中有多个线程，比全局队列更“干净”，可以使用barrier
++ `group` ：任务组，可以对多个任务进行集中管理
 + `死锁` ：注意，GCD环境下的死锁往往不是因为 `线程阻塞` 引起的， 而是由 `队列阻塞` 引起的。
 
 #### 5.3.2 任务与队列
@@ -565,7 +565,101 @@ iOS中提供了4种多线程的解决方案：
 + `dispatch_sync` ：将任务 `同步` 提交到队列，等待任务处理完成，<u>可能产生死锁</u>
 + `dispatch_async` ：将任务 `异步` 提交到队列，不作等待
 
+| 提交方式 | 主队列 | 串行队列 | 并发队列 |
+| :------: | :------- | :------- | :------- |
+| sync | 死锁 | 顺序调度，不会开启新线程，可能死锁 | 顺序调度，不会开启新线程 |
+| async | 顺序调度，不会开启新线程 | 顺序调度，开启新线程(一条) | 乱序调度，开启新线程(多条) |
 
+<font color=PaleVioletRed>注意</font>
+GCD队列死锁的触发条件其实可以看作：队列与任务相互等待，陷入循环等待的困境。
+例如在主队列中同步提交了一个任务，主队列等待该任务的完成，而该任务又要等待主队列中已有任务(例如 `main函数` )执行结束后，才提交给CPU，此时就陷入了队列阻塞，进一步导致了死锁。
+更广泛地来看，队列阻塞需要如下的结构：
+
+```objective-c
+// queue 为串行队列
+dispatch_sync(queue, ^{
+    // do someting
+    dispatch_sync(queue, ^{
+        // 导致阻塞
+    });
+});
+// 或
+dispatch_async(queue, ^{
+    // do someting
+    dispatch_sync(queue, ^{
+        // 导致阻塞
+    });
+});
+```
+
+本质上是在某个串行队列的任务中，往该串行队列同步提交了一个任务，导致该队列与新的任务陷入循环等待。
+`主队列` 可以看作是一个提交了包裹着 `main函数` 任务的特殊串行队列。
+
+#### 5.3.3 barrier
+
+`dispatch_barrier_async`在并发任务管理中起到一个栅栏的作用，它提交的任务会等待所有位于barrier之前的所有任务执行结束后执行，并且在该任务执行之后，barrier之后的任务才会得到执行。
+
+barrier需要在创建的并发队列中使用，不能在 `global队列` 中使用，因为 `global队列` 中含有系统调用函数，如果使用，等同于 `dispatch_async` ，没有barrier的效果。
+
+```objective-c
+// queue 为并发队列
+dispatch_async(queue, ^{
+    NSLog(@"1");
+});
+dispatch_async(queue, ^{
+    NSLog(@"2");
+});
+dispatch_barrier_async(queue, ^{
+    NSLog(@"3");
+});
+dispatch_async(queue, ^{
+    NSLog(@"4");
+});
+dispatch_async(queue, ^{
+    NSLog(@"5");
+});
+```
+
+该段代码能保证 `3` 在 `12` 和 `45` 之间输出。
+
+由于barrier的特性，可以用来实现 `多读一写` ，即模拟读写锁。
+
+#### 5.3.4 dispatch_once
+
+`dispatch_once` 能保证任务只会被执行一次，即使同时多线程调用也是线程安全的。常用于 `getInstance` 、 `swizzeld method` 等功能。
+
+```objective-c
+// 懒汉式单例
+- (instancetype)getInstance {
+    static MyManager *instance;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        instance = [[MyManager alloc] init];
+    });
+    return instance;
+}
+```
+
+#### 5.3.5 任务组
+
+`dispatch_group` 是一个组的概念，可以把相关的任务归并到一个组内来执行，通过监听组内所有任务的执行情况来做相应处理。
+
+##### 5.3.5.1 dispatch_group_async
+
+```objective-c
+void dispatch_group_async(dispatch_group_t group,
+                          dispatch_queue_t queue,
+                          dispatch_block_t block);
+```
+
+将任务异步提交到指定任务组和队列中执行。
+
+##### 5.3.5.2 dispatch_group_wait
+
+```objective-c
+long dispatch_group_wait(dispatch_group_t group, 
+                         dispatch_time_t timeout);
+```
 
 #### 5.4 NSOperation
 
