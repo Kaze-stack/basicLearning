@@ -558,7 +558,7 @@ iOS中提供了4种多线程的解决方案：
 + `group` ：任务组，可以对多个任务进行集中管理
 + `死锁` ：注意，GCD环境下的死锁往往不是因为 `线程阻塞` 引起的， 而是由 `队列阻塞` 引起的。
 
-#### 5.3.2 任务与队列
+##### 5.3.2 任务与队列
 
 提交任务到队列有两种形式：
 
@@ -595,7 +595,7 @@ dispatch_async(queue, ^{
 本质上是在某个串行队列的任务中，往该串行队列同步提交了一个任务，导致该队列与新的任务陷入循环等待。
 `主队列` 可以看作是一个提交了包裹着 `main函数` 任务的特殊串行队列。
 
-#### 5.3.3 barrier
+##### 5.3.3 barrier
 
 `dispatch_barrier_async`在并发任务管理中起到一个栅栏的作用，它提交的任务会等待所有位于barrier之前的所有任务执行结束后执行，并且在该任务执行之后，barrier之后的任务才会得到执行。
 
@@ -624,7 +624,7 @@ dispatch_async(queue, ^{
 
 由于barrier的特性，可以用来实现 `多读一写` ，即模拟读写锁。
 
-#### 5.3.4 dispatch_once
+##### 5.3.4 dispatch_once
 
 `dispatch_once` 能保证任务只会被执行一次，即使同时多线程调用也是线程安全的。常用于 `getInstance` 、 `swizzeld method` 等功能。
 
@@ -640,7 +640,7 @@ dispatch_async(queue, ^{
 }
 ```
 
-#### 5.3.5 任务组
+##### 5.3.5 任务组
 
 `dispatch_group` 是一个组的概念，可以把相关的任务归并到一个组内来执行，通过监听组内所有任务的执行情况来做相应处理。
 
@@ -661,11 +661,128 @@ long dispatch_group_wait(dispatch_group_t group,
                          dispatch_time_t timeout);
 ```
 
+阻塞当前线程，等待任务组group完成所有任务。
+`timeout` 为等待的时间，若超过等待时间或任务完成，则解除对线程的阻塞。
+当 `timeout` 设置为 `DISPATCH_TIME_FOREVER` 时，则会一直阻塞当前线程，直到任务完成。
+
+##### 5.3.5.3 dispatch_group_notify
+
+```objective-c
+void dispatch_group_notify(dispatch_group_t group,
+                           dispatch_queue_t queue, 
+                           dispatch_block_t block);
+```
+
+类似于通知回调，不会阻塞当前线程，当任务完成时，在指定任务队列queue中调用任务block。
+
+##### 5.3.5.4 dispatch_group_enter / dispatch_group_leave
+
+```objective-c
+void dispatch_group_enter(dispatch_group_t group);
+void dispatch_group_leave(dispatch_group_t group);
+```
+
+类似于信号量，`dispatch_group_enter` 表示组内任务数加一， `dispatch_group_leave` 表示组内任务数减一，当任务数为零时，解除 `dispatch_group_wait` 的阻塞和执行 `dispatch_group_notify` 的block。
+
+虽然任务组会自动判断组内任务的执行情况，但当任务组内嵌套异步任务时，自动判断的结果就可能会出现问题，例如：
+
+```objective-c
+NSInteger a = 0;
+dispatch_semaphore_t sema = dispatch_semaphore_create(1);
+
+dispatch_group_async(group, queue, ^{
+    for (int i = 0; i < 100; i++) {
+        dispatch_async(queue, ^{
+            [NSThread sleepForTimeInterval:1];
+            dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+            a += 1;
+            dispatch_semaphore_signal(sema);
+        });
+    }
+});
+
+dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
+printf("%d", a);
+```
+
+由于是异步任务不会阻塞当前队列，因此每次循环中的异步提交后，任务组都会认为是完成了一个任务，并不会真的等待异步任务的结束，以至于最后打印出来的 `a` 的值，基本上就不会是 `100` 。
+
+正确的处理方法：
+
+```objective-c
+NSInteger a = 0;
+dispatch_semaphore_t sema = dispatch_semaphore_create(1);
+
+dispatch_group_enter(group);
+for (int i = 0; i < 100; i++) {
+    dispatch_async(queue, ^{
+        [NSThread sleepForTimeInterval:1];
+        dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+        a += 1;
+        dispatch_semaphore_signal(sema);
+
+        dispatch_group_leave(group);
+    });
+}
+
+dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
+printf("%d", a);
+```
+
 #### 5.4 NSOperation
+
+NSOperation是一个抽象类，不能直接使用。
+有三种使用方法：
+
++ 使用子类NSInvocationOperation
++ 使用子类NSBlockOperation
++ 自定义继承并实现
+
+##### 5.4.1 特点
+
+`NSOperation` 相较于 `GCD` 有着面向对象的特性，还有更多更便捷的操作。
+
++ `setMaxConcurrentOperationCount:` 设置最大并发数
++ `addDependency:` 设置队列间的依赖关系(执行顺序)
++ `setQueuePriority:` 设置队列优先级(iOS8之前推荐)
++ `setQualityOfService:` 设置队列服务质量(iOS8之后推荐)
++ `setCompletionBlock:` 设置结束回调
++ `cancelAllOperations` 取消所有任务
++ `setSuspended:` 设置队列是否暂停
+
+>暂停和取消并不代表可以将当前的操作立即取消，而是在当前的操作执行完毕之后不再执行新的操作。
+
+##### 5.4.2 NSInvocationOperation
+
+在当前线程中串行执行，不会开启新线程。
+将对象的方法作为任务执行。
+
+##### 5.4.3 NSBlockOperation
+
+并发执行，但不确定是否是在当前线程执行。
+类似于GCD，将block作为任务追加执行。
+可以多个操作批量执行。
+
+##### 5.4.4 NSOperationQueue
+
+分为主队列 `[NSOperationQueue mainQueue]` 和手动创建的非主队列。
+
+可以将 `NSInvocationOperation` 和 `NSBlockOperation` 加入队列进行串行/并发处理。
 
 #### 5.5 线程安全
 
-#### 5.6 死锁
+线程安全主要通过各种各样的锁来实现。
+按性能排序：
+
++ `OSSpinLock` 自旋锁，iOS10已弃用，存在优先级反转问题
++ `os_unfair_lock` 自选锁，但不忙等， `OSSpinLock`的替代品
++ `dispatch_semaphore_t` 信号量，执行结束时需要回到初始值，否则会崩溃
++ `pthread_mutex_t` 互斥锁，默认非递归，可手动设置
++ `NSLock` 互斥锁，非递归，基于 `pthread_mutex_t`
++ `NSCondition` 条件变量，可广播唤醒
++ `NSRecursiveLock` 互斥锁，`NSLock`的可递归版本
++ `NSConditionLock` 条件变量，对 `NSCondition` 的封装，可进行无条件加锁
++ `@synchronized` 互斥锁，可递归，将临界区限定在大括号内
 
 ### 6 Runloop
 
