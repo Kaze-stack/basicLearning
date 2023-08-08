@@ -13,8 +13,26 @@
 
 + [5. 多线程](#5-多线程)
 
++ [6. 运行时Runtime](#6-运行时runtime)
+
 [Swift](#swift)
 [iOS开发](#ios开发)
+
++ [1. Foundation](#1-foundation)
+
++ [2. Runloop](#2-runloop)
+
++ [3. UIKit](#3-uikit)
+
++ [. 通知]
+
++ [. 数据持久化]
+
++ [. MVC/MvvM]
+
++ [. CocoaPods]
+
++ [. 第三方库]
 
 ## Objective-C
 
@@ -67,7 +85,7 @@ objc_msgSend通过receiver自身类型的 `isa指针` 在类中进行方法查�
 ##### 1.2.4 动态加载
 
 得益于运行时系统，OC可以在运行时期间创建新的 `类(Class)` ，对 `属性(property)` 和 `方法(method)` 进行查询、添加、修改。
->运行时内容详见[运行时Runtime](#7-运行时runtime)
+>运行时内容详见[运行时Runtime](#6-运行时runtime)
 
 ### 2. 面向对象
 
@@ -276,7 +294,7 @@ KVO是Key-Value-Observing的缩写，即键值监听，KVO提供了一套基于�
 
 > 可以对比阅读Swift的 引用计数 部分
 
-#### 3.1 概念
+#### 3.1 基本概念
 
 引用计数是一种内存管理机制，一般用于管理对象类型的生命周期，在OC中用于管理OC对象。
 一个对象的引用计数大于0时，表示这个对象被持有，不能被释放；当引用计数为0时表示这个对象已经不被持有，需要释放并回收内存。
@@ -393,7 +411,7 @@ int main(int argc, const char * argv[]) {
 
 ><font color=PaleVioletRed>注意</font>
 >自动释放池中对象的释放不单单是受到自动释放池销毁的控制，有时还要考虑到Runloop迭代对自动释放池的影响。
->详见 [Runloop](#6-runloop) 一节。
+>详见 [Runloop](#2-runloop) 一节。
 
 #### 3.3 自动引用计数(ARC)
 
@@ -464,7 +482,7 @@ self.block = ^{
 
 > 可以对比阅读Swift的 闭包 部分
 
-#### 4.1 Block概念
+#### 4.1 基本概念
 
 与其他函数中的lambda/匿名函数/闭包类似，OC中的block也是一种可以捕获上下文中变量的无名函数体。
 block的形式如下：
@@ -513,7 +531,7 @@ block的底层结构如下图所示：
 block有3种类型， `__NSGlobalBlock__` 、 `__NSStackBlock__` 、 `__NSMallocBlock__` ，最终都是继承自 `NSBlock` 类型。
 
 | 类型 | 存放位置 | 如何判定 | copy返回值 |
-| :------: | :------: | :------: | :------- |
+| :------: | :------: | :------- | :------- |
 | \_\_NSGlobalBlock\_\_ | 数据区 | 没有捕获局部auto变量 | 自身(单例) |
 | \_\_NSStackBlock\_\_ | 栈区 | 捕获了局部auto变量，block执行完就销毁 | 在堆上的一份复制 |
 | \_\_NSMallocBlock\_\_ | 堆区 | 1、捕获了局部auto变量，赋给了block指针<br>2、作为Cocoa API/GCD API的参数 | 自身强引用，引用计数+1 |
@@ -784,9 +802,9 @@ NSOperation是一个抽象类，不能直接使用。
 + `NSConditionLock` 条件变量，对 `NSCondition` 的封装，可进行无条件加锁
 + `@synchronized` 互斥锁，可递归，将临界区限定在大括号内
 
-### 6 Runloop
+### 6 运行时Runtime
 
-### 7 运行时Runtime
+> 可以对比阅读Swift的 运行时 部分
 
 ---
 
@@ -795,3 +813,112 @@ NSOperation是一个抽象类，不能直接使用。
 ---
 
 ## iOS开发
+
+### 1 Foundation
+
+#### 1.1 基本概念
+
+`Core Foundation` 是一套 `C` 语言接口， `Foundation` 用 `Objective-C` 封装了 `Core Foundation` 的一套组件，并实现了额外了一些组件供开发人员使用。
+
+`Core Foundation` 中的类型基本以 `CF` 为前缀， `Foundation` 则以 `NS` 为前缀。相比之下， `Core Foundation` 中的类型不受 `引用计数` 的影响，键值存储时也不用遵守 `NSCopying` 协议。两者的大部分类型是可以相互转换的，只需要加上 `__bridge` 的前缀即可。
+
+>在Swift中，Apple重写了部分Foundation中的类型，并去除了 _NS_ 前缀。
+
+##### 1.1.1 类簇
+
+`类簇` 是 `Foundation` 中广泛使用的设计模式。
+类簇将一些私有的、具体的子类组合在一个公共的、抽象的超类下面，以这种方法来组织类可以简化一个面向对象框架的公开架构，而又不减少功能的丰富性。
+
+简单的来说， `NSxxx` 是个抽象类，然后它在外层提供了很多方法接口，但是这些方法的实现是由具体 的内部类来实现的。当使用 `NSxxx` 生成一个对象时，初始化方法会判断哪个 **自己内部的类** 最适合生成这个对象，然后这个类就会像 `工厂` 一样，生成这个具体的类对象返回给你。这种又外层类提供统一抽象的接口，然后具体实现让隐藏的，具体的内部类来实现，在设计模式中称为 `抽象工厂` 。
+
+一般情况下是不推荐继承 `Foundation` 中的类簇的，开发者继承的子类是无法调用父类的其他子类的，因为这些子类是通过运行时库内部实现，通常不暴露给开发者使用。
+
+##### 1.1.2 对象复制
+
++ 浅拷贝
+  + `=` 引用计数+1
++ 深拷贝
+  + `copy` 用于复制对象副本，返回对象不可修改的副本，潜拷贝
+    + 自定义对象需要实现 `NSCopying` 协议
+  + `mutableCopy` 用于复制对象可变副本，即使被复制的对象本身不可改变，深拷贝
+    + 自定义对象需要实现 `NSMutableCopying` 协议
+
+##### 1.1.3 容器遍历
+
++ `for( ; ; )` 依赖于下标，能够指定顺序，可以针对下标进行处理
++ `for in` 快速枚举，效率比 `for( ; ; )` 高，但无法指定顺序和针对下标处理
++ 枚举器
+  + `enumerateObjectsUsingBlock:` 顺序，可以针对下标，效率不高
+  + `NSEnumerationConcurrent` 并发遍历，可以针对下标，效率不高
+  + `NSEnumerationReverse` 逆序，可以针对下标，效率不高
+
+#### 1.2 常用对象
+
+##### 1.2.1 NSString 与 NSMutableString
+
+`NSString` 是 `不可变` 字符串，指的是指针指向的字符串序列不可变。
+`NSMutableString` 继承自 `NSString` ，是 `可变` 字符串。
+
+`NSString` 是通过 `类簇` 构建的一个抽象类：
+
+| 子类类型 | 存放位置 | 使用的父类 | 如何判定 | 引用计数 |
+| :------: | :------: | :------: | :------- | :------: |
+| \_\_NSCFConstantString | 数据区 | NSString | 1、static和直接赋值<br>2、initWithString<br>3、与其他在数据区的字符串有相同的字面量 | -1 |
+| NSTaggedPointerString | 栈区 | NSString | initWithFormat或copy可变副本，仅包含小于12个ASCII字符<br>(该类型是伪对象，直接将字符串存在指针的地址里，利用指针对齐的特性，最低位设为 `1`，后三位作为标志，可用空间为60bits) | -1 |
+| \_\_NSCFString | 堆区 | NSString<br>NSMutableString | 1、通过NSMutableString类型创建<br>2、通过NSString类型创建，且不满足以上两种条件 | 正常 |
+
+>Swift中的NSString中没有 _\_\_NSCFConstantString_ 类型
+
+##### 1.2.2 NSArray 与 NSMutableArray
+
+`NSArray` 是 `不可变` 数组，数组内容不可修改。
+`NSMutableArray` 是 `可变` 数组，可以对数组内容进行增删改，变长数组。
+
+OC数组只能存放 **对象** ，无法存放 **基本数据类型**
+
+`NSMutableArray` 为了能够在随机位置的 `insert` 和 `remove` 操作下也能保持一个较高的效率，底层采用了 `环形缓冲区(Circular Buffer)` ，也被称为 `环形队列(Circular Queue)` 。每次插入或删除时，可以选择更靠近端的一侧进行 `memmove` ，充分利用空间并减少元素移动的开销。
+
+![Circular Buffer](img/CFArray_CircularBuffer.svg)
+
+##### 1.2.3 集合(Set)
+
+Foundation中的Set都使用了 `拉链法` 的 `hashTable` ，因此查找和插入的复杂度接近 `O(1)` 。
+
++ `NSSet` 无序、不可变、无重复的集合
++ `NSMutableSet` 无序、可变、无重复的集合，可进行集合运算，继承自 `NSSet`
++ `NSCountedSet` 无序、可变、为重复元素计数的集合，继承自 `NSMutableSet`
++ `NSOderedSet` 有序、不可变、无重复的集合，有索引
++ `NSMutableOrderedSet` 有序、可变、无重复的集合，有索引，继承自 `NSOderedSet`
+
+##### 1.2.4 NSDictionary 与 NSMutableDictionary
+
+`NSDictionary` 是 `不可变` 字典。
+`NSMutableDictionary` 继承自 `NSDictionary` ，是 `可变` 字典。
+
+Foundation中的Dictionary都使用了 `拉链法` 的 `hashTable` ，因此查找和插入的复杂度接近 `O(1)` 。
+字典使用两个数组分别存储 `key` 和 `object` ，哈希表中以key为键，对应object的下标作为值。数组扩容时，按原有空间的两倍进行扩充。
+
++ `setObject:ForKey:` 是NSMutableDictionary特有的方法， `object` 不能为 `nil`
++ `setValue:ForKey:` 是KVC的主要方法，当 `value` 为 `nil` 时，自动调用 `removeObject:forKey:` ，约等于啥也没做
+
+##### 1.2.5 NSCache
+
+`NSCache` 是官方提供的缓存类，在一些第三方库中，例如 `AFNetworking` 和 `SDWebImage` ，使用它来管理缓存。
+
+`NSCache` 用法与 `NSMutableDictionary` 的用法很相似，但又有许多优势：
+
+1. NSCache并不会拷贝对象，而是使用 **强引用**
+2. NSCache在收到系统发出的 `低内存警告` 时，会清理缓存，遵循 `LRU` 原则
+3. NSCache是 **线程安全** 的，不需要加锁控制
+4. NSCache可以设定 **对象数量限制** 或 **开销限制**
+
+><font color=PaleVioletRed>注意</font>
+>超出数量限制或开销限制时，可能会删减其中的对象，并不意味着一定会删除，所以想通过调整开销值迫使缓存删减对象的情况下，不应使用NSCache。
+
+### 2 Runloop
+
+#### 2.1 基本概念
+
+Runloop通过构建一个事件循环，保证了App处理完所有任务后不会直接退出，而是保持。同时，Runloop并不像一般意义上的死循环，是一种处于占满CPU的忙等的行为，而是通过 `pthread` 和 `mach thread` 进行管理，当没有事件和任务时，线程处于休眠状态，有事件发生时，将线程唤醒，进行处理。
+
+### 3 UIKit
