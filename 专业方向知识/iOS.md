@@ -28,8 +28,6 @@
 
 + [. 数据持久化]
 
-+ [. MVC/MvvM]
-
 + [. CocoaPods]
 
 + [. 第三方库]
@@ -410,8 +408,8 @@ int main(int argc, const char * argv[]) {
 ```
 
 ><font color=PaleVioletRed>注意</font>
->自动释放池中对象的释放不单单是受到自动释放池销毁的控制，有时还要考虑到Runloop迭代对自动释放池的影响。
->详见 [Runloop](#2-runloop) 一节。
+>自动释放池不单单是受显式销毁的控制，有时还要考虑到Runloop的影响。
+>详见 [Runloop的运行](#24-runloop的运行) 一节。
 
 #### 3.3 自动引用计数(ARC)
 
@@ -921,4 +919,135 @@ Foundation中的Dictionary都使用了 `拉链法` 的 `hashTable` ，因此查�
 
 Runloop通过构建一个事件循环，保证了App处理完所有任务后不会直接退出，而是保持。同时，Runloop并不像一般意义上的死循环，是一种处于占满CPU的忙等的行为，而是通过 `pthread` 和 `mach thread` 进行管理，当没有事件和任务时，线程处于休眠状态，有事件发生时，将线程唤醒，进行处理。
 
+#### 2.2 与线程的关系
+
+Runloop目的是让线程在有工作的时候保持忙碌，因此它们的关系是一一对应的，一个线程只能对应一个Runloop，即在某一时刻，一个线程只能运行一个Runloop。Runloop与线程的关系保存在一个全局的 Dictionary中。
+
+当运行一个应用程序的时候，系统会为应用程序的 `主线程` 创建一个Runloop用来处理主线程上的事件，例如UI刷新和Touch事件。而开启 `子线程` 时，需要 `显式` 获取并运行一个Runloop，否则子线程执行完任务就会退出。
+
+```objective-c
+// Objective-C
+NSThread *t = [[NSThread alloc] initWithTarget:self selector:@selector(print) object:nil];
+[t start];
+[self performSelector:@selector(print) onThread:t withObject:nil waitUntilDone:NO];
+// 抛出异常 target thread exited
+```
+
+```swift
+// Swift
+let t = Thread(target: self, selector: #selector(printl), object: nil)
+t.start()
+// 不执行
+self.perform(#selector(printl), on: t, with: nil, waitUntilDone: false)
+```
+
+Apple并不允许直接创建Runloop，只能通过 `[NSRunLoop currentRunLoop]` 和 `Runloop.current` 来获取当前线程的Runloop。
+
+#### 2.3 Runloop的结构
+
+![RunloopDataStruct](img/Runloop_struct.svg)
+
+一个Runloop中包含了若干的 `Mode` ，但在实际运行时，只会选择其中一个，如果要切换，就需要先退出再选择一个Mode进入。这样能够有效地分隔不同组的Source/Observer/Timer，让其互不影响。
+
+##### 2.3.1 Mode
+
+一个Mode中包含了若干的 `Source` 、 `Observer` 和 `Timer` ，以上三者统称 `ModeItem` ，ModeItem与Mode有多对一关系。
+
+>当Runloop启动时，选择的Mode中不含有任何ModeItem时，不会进入循环，而是直接退出。
+
+##### 2.3.2 Source
+
+`Source` 是事件源，分为两种类型，区分的标准为是否与 `port` 有关，port即为 `mach_port` ，系统内核端口
+
++ `source0` 为非port事件，一般是App内部事件，例如 `performSelector:onThread:` 和 `hitTest:withEven:` ，由于只包含了一个回调函数，它并不能主动触发事件。
++ `source1` 为port事件，来自系统内核或其他进程的事件，例如屏幕触摸、网络传输事件，由于包含了一个 `mach_port` 和一个回调函数，可以主动唤醒休眠中的Runloop。
+
+>实际上，有些事件并不是单一的 _source0_ 或 _source1_ ，而是复合型的：
+>触摸屏幕时
+>-->先被IOKit包装一个事件，由 _mach\_port_ 发送给App，作为 **source1** 唤醒Runloop，这是一个系统注册的事件；
+>-->再通过回调函数，将事件分发给 **source0** 处理，这是App内部的触摸事件。
+
+##### 2.3.3 Observer
+
+`Observer` 是观察者，每个Observer都包含了一个回调函数，当Runloop的状态发生变化时，观察者就能通过回调函数接收到这个变化。可以观测的时间点有以下几个：
+
+```objective-c
+typedef CF_OPTIONS(CFOptionFlags, CFRunLoopActivity) {
+    kCFRunLoopEntry         = (1UL << 0), // 即将进入Loop
+    kCFRunLoopBeforeTimers  = (1UL << 1), // 即将处理 Timer
+    kCFRunLoopBeforeSources = (1UL << 2), // 即将处理 Source
+    kCFRunLoopBeforeWaiting = (1UL << 5), // 即将进入休眠
+    kCFRunLoopAfterWaiting  = (1UL << 6), // 刚从休眠中唤醒
+    kCFRunLoopExit          = (1UL << 7), // 即将退出Loop
+};
+```
+
+##### 2.3.4 Timer
+
+`Timer` 是基于时间的触发器，不是一般意义上的定时器，它和 `NSTimer` 是 `toll-free bridged` 的，可以混用。内部包含一个时间长度和一个回调函数。当其加入到 RunLoop 时，RunLoop会注册对应的时间点，当时间点到时，Runloop会被唤醒以执行那个回调。
+
+但由于这样的机制，就会出现 `不准确` 的问题：
+**1、** 当Timer所在的线程上出现繁重任务时，如果在触发的时间节点上，Runloop无法处理Timer事件的话，就会放弃本次的处理：
+
+```objective-c
+[NSTimer scheduledTimerWithTimeInterval:1 repeats:YES block:^(NSTimer * _Nonnull timer) {
+    NSLog(@"Time Out");
+}];
+
+// 2秒后模拟一个长达5秒的任务
+[self performSelector:@selector(sleepForFive) withObject:nil afterDelay:2];
+```
+
+输出结果：
+
+```cpp
+16:27:40.902 Time Out
+16:27:41.902 Time Out
+16:27:46.904 Sleep Over
+16:27:46.902 Time Out
+16:27:47.902 Time Out
+16:27:48.902 Time Out
+16:27:49.902 Time Out
+```
+
+可见 `42` 、 `43` 、 `44` 、 `45` 这几个时间节点上并没有触发。
+
+**2、** 当Timer所在线程需要处理 `UIScrollview滑动` 时，若Timer在 `NSDefaultRunloopMode` 中，则会受到阻塞，从而变得不准确。
+
+UIScrollview滑动的过程中，Runloop会先退出原来的Mode，切换到 `NSTrackingRunloopMode` 中，原Mode中的Timer就会被阻塞，直到UI事件处理完后，再切换回来，Timer的事件才能够继续被处理。
+
+因此，一般不建议将Timer放在主线程或者需要处理UI的线程上，如果非要使用，可以将Timer注册进 `NSCommonRunloopMode` 或是使用不依赖Runloop的 `dispatch_timer` 。
+
+#### 2.4 Runloop的运行
+
+![Runloop_Exec](img/Runloop_exec.webp)
+
+>关于这张图，网上大部分流传的版本中 **Source1(port)** 那块写的都是 **Source0(port)** ，嘶
+
+##### 2.4.1 Runloop 与 autorelease
+
+在不含有Runloop的线程中，自动释放池的销毁是显式指定的；
+而在Runloop环境下，自动释放池的销毁是与Runloop有关的。
+
+App启动后，苹果在主线程Runloop里注册了两个 `Observer` ，其回调都是 `_wrapRunLoopWithAutoreleasePoolHandler()` 。
+
+第一个Observer监视的事件是 `即将进入Loop(图中1)` ，其回调内会调用 `_objc_autoreleasePoolPush()` 创建自动释放池。其 `order` 是 $-(2^{31} - 1) = -2147483647$，优先级最高，保证创建释放池发生在其他所有回调之前。
+
+第二个 Observer 监视了两个事件：
+**1、** `线程即将休眠(图中6)` 时调用 `_objc_autoreleasePoolPop()` 和 `_objc_autoreleasePoolPush()` 释放旧的池并创建新池；
+**2、** `即将退出Loop(图中10)` 时调用 `_objc_autoreleasePoolPop()` 来释放自动释放池。这个Observer的 `order` 是 $2^{31} - 1 = 2147483647$，优先级最低，保证其释放池子发生在其他所有回调之后。
+在主线程执行的任务，通常是在事件回调、Timer回调内的。这些回调会被Runloop创建好的自动释放池包围，所以一般不需要关注销毁问题。
+
 ### 3 UIKit
+
+#### 3.1 MVC
+
+#### 3.2 生命周期
+
+#### 3.3 Interface Builder
+
+#### 3.4 UITableView
+
+#### 3.5 UINavigationController
+
+#### 3.6 响应链
