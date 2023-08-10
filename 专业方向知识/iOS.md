@@ -1022,7 +1022,7 @@ UIScrollview滑动的过程中，Runloop会先退出原来的Mode，切换到 `N
 
 ![Runloop_Exec](img/Runloop_exec.webp)
 
->关于这张图，网上大部分流传的版本中 **Source1(port)** 那块写的都是 **Source0(port)** ，嘶
+>关于这张图，网上大部分流传的版本中 **Source1(port)** 那块写的都是 **Source0(port)** ...
 
 ##### 2.4.1 Runloop 与 autorelease
 
@@ -1035,19 +1035,144 @@ App启动后，苹果在主线程Runloop里注册了两个 `Observer` ，其回�
 
 第二个 Observer 监视了两个事件：
 **1、** `线程即将休眠(图中6)` 时调用 `_objc_autoreleasePoolPop()` 和 `_objc_autoreleasePoolPush()` 释放旧的池并创建新池；
-**2、** `即将退出Loop(图中10)` 时调用 `_objc_autoreleasePoolPop()` 来释放自动释放池。这个Observer的 `order` 是 $2^{31} - 1 = 2147483647$，优先级最低，保证其释放池子发生在其他所有回调之后。
+**2、** `即将退出Loop(图中10)` 时调用 `_objc_autoreleasePoolPop()` 来释放自动释放池。这个Observer的 `order` 是 $2^{31} - 1 = 2147483647$，优先级最低，保证释放池子发生在其他所有回调之后。
 在主线程执行的任务，通常是在事件回调、Timer回调内的。这些回调会被Runloop创建好的自动释放池包围，所以一般不需要关注销毁问题。
 
 ### 3 UIKit
 
 #### 3.1 MVC
 
+##### 3.1.1 基本概念
+
+MVC是一种将 `数据` 、 `页面` 和 `业务逻辑` 分离的架构，实现了模块化和单一职责原则。
+
+MVC即 `Model-View-Controller` ：
+
++ `Model` 模型，对数据的定义和管理
++ `View` 视图，与用户交互的页面
++ `Controller` 控制器，负责处理事件，担当数据和视图交流的桥梁
+
+MVC有两套经典的模型：
+
+**1、**
+![MVC_1](img/MVC_1.svg)
+用户请求发送给Controller，Controller需要主动调用Model层的接口去取得实际需要的数据对象，之后将数据发送给需要的View，View渲染之后返回页面给用户。
+>在这种情况下，Controller往往会比较大，因为它要知道需要调用哪个Model的接口获取数据对象，还需要知道要把数据对象发送给哪个View去渲染；View和Model都比较简单纯粹，它们都只需要被动地根据Controller的要求完成它们自己的任务就好了。
+
+**2、**
+![MVC_2](img/MVC_2.svg)
+用户请求发送给Controller，Controller调用Model的接口发起数据更新操作，接着就直接转向需要的View；View会调用Model去取得经过Controller更新以后的最新数据，渲染并返回给用户。
+>这种情况下，Controller相对就会比较简单，而这里写操作是由Controller发起的，读操作是由View发起的，二者的业务对象模型可以不相同，非常适合需要 _命令查询职责分离_ 的场景，
+
+##### 3.1.2 UIKit的MVC
+
+![CS193p_MVC](img/CS193p_MVC.jpeg)
+从斯坦福CS193p公开课的一张经典例图可以看出，UIKit中的MVC是类似于第一套经典模型的。
+
++ View通过 `代理delegate` 和 `数据源data source` 实现了与Controller的通信
++ Controller通过 `outlet` 实现了对View的控制，又通过Model的 `API` 实现的任务的交付
++ Model中通过 `NSNotification` 和 `KVO` 实现了任务处理完后对Controller的通知
++ 做到了View和Model的隔离
+
 #### 3.2 生命周期
+
+##### 3.2.1 UIApplication生命周期
+
++ `willFinishLaunching` 程序即将完成启动，只在程序启动时执行一次
++ `didFinishLaunching` 程序已经完成启动，将要显示界面了，只在程序启动时执行一次
++ `didBecomeActive` 程序在处于前台时调用
++ `willResignActive` 程序将要进入后台，程序被其他任务强制占用了，就会调用这个方法，所以这个方法也称为程序中断调用方法
++ `didEnterBackground` 程序已经进入后台
++ `willEnterForeground` 程序将要从后台进入前台
++ `willTerminate` 程序将要终止
+
+##### 3.2.2 UIViewController生命周期
+
+![UIViewCOntroller](img/UIViewController_lifecycle.svg)
+UIViewController的生命周期里包含了UIView的生命周期，图中红色部分就是UIView的生命周期
 
 #### 3.3 Interface Builder
 
+Interface Builder(界面生成器)简称IB，于1988年面世，用于OS X和iOS应用的用户界面设计。现在主要有两种设计方式和三种文件：
+
++ `nib` 二进制数据，是xib文件编译后的产物
++ `xib` 轻量级的设计文件，一般用来设计局部UI界面，本质是 `xml` 文件，可以与 `UIViewController` 和 `UIView` 对应
++ `storyboard` 复杂的设计文件，一般用来描述整个软件的多个界面，并且能展示多个界面之间的跳转关系，本质上是多个xib文件的集合，只能与 `UIViewController` 对应；存在 **难以维护** 、 **性能瓶颈** 、 **错误定位** 困难等问题
+
 #### 3.4 UITableView
+
+UITableView是UIKit中常用的表格视图
+
+##### 3.4.1 UITableViewDelegate
+
+表格视图的代理协议，全是可选实现：
+
++ 表格内元素显示的生命周期
++ 设置、获取行内属性
++ 管理选择、编辑、删除、移动事件
++ 修改Header和Footr属性
++ 重排
++ 管理视图焦点
+
+##### 3.4.2 UITableViewDataSource
+
+表格视图的数据源协议，两个必须实现：
+
++ 表格行数
++ 每一行的Cell描述
+
+可选实现：
+
++ 设置Section区域属性
++ 能否编辑、移动、重排
++ 移动、重排事件的处理
+
+##### 3.4.3 UITableViewCell复用
+
+UITableViewCell就是表格中的单元，如果没有复用机制的话，一份稍微长一点的表格就需要不断创建和销毁Cell，可能存在性能问题和潜在的内存泄漏。
+
+Cell复用的机制类似于对象池，通过 `Identifier` 来指定一个池子，从中复用对象。
+![Cell_reuse](img/Cell_reuse.svg)
+
+>考虑到实际的读取速度和Cell的显示，复用池内的Cell数量一般是比屏幕上能显示的个数要多一些的。
 
 #### 3.5 UINavigationController
 
-#### 3.6 响应链
+##### 3.5.1 结构
+
+UINavigationController本质上是一个 `栈` 结构，不断将ViewController压栈，返回时进行弹栈，也可以不断弹栈直到某一个或者最底下的ViewCOntroller。
+
++ `pushViewController:animated:` 压栈
++ `popViewControllerAnimated:` 弹栈
++ `popToRootViewControllerAnimated:` 不断弹栈直到栈底
++ `popToViewController:animated:` 不断弹栈直到某个ViewController
+
+##### 3.5.2 UINavigationBarItem
+
+UINavigationBarItem是ViewController自带的属性，但需要在UINavigationController的栈中才能显示，本质上是需要 `UINavigationBar` 作为容器。
+
+#### 3.6 Auto Layout
+
+##### 3.6.1 概念
+
+自动布局Auto Layout源自于 `Cassowary解析工具` 。
+`Cassowary算法` 能够有效解析线性等式和线性不等式，而用户的界面中总是会出现不等关系和相等关系，因此就有了 `Cassowary解析工具` ，可以通过 `约束` 来描述视图间关系，约束就是规则，能够表示出一个视图相对于另一个视图的位置。
+
+自动布局的计算顺序是由外向里，最先屏幕尺寸，再一层一层往里决定各个元素大小。
+>当相关视图发生变化，例如添加、删除和改变尺寸，会进行重新计算，但不会立即布局，而是等到Runloop完成一次迭代时，进行批量重新布局，节省开销。
+>如果有即时性要求的话，可以调用 _layoutIfNeeded方法_ ，立即进行布局。
+
+##### 3.6.2 约束
+
+约束是指定视图之间的关系和规则，然后在运行时再将规则转换成视图的frame。
+而约束的本质其实是数学公式，例如指定View1在View2之下有8px的距离，其实就是创建一个约束公式：
+${View1.top} = 1.0 * {View2.buttom} + 8.0$
+
+更一般的公式：
+${View1.attribute} = {mutiplier} * {View2.attribute} + {Constant}$
+
+NSLayoutConstraint中的 `constraintWithItem:attribute:relatedBy:toItem:attribute:multiplier:constant:` 方法就是实现了这一公式。
+
+设定了两个视图之间的约束后，要将约束添加到两个视图最近的父视图中。
+
+#### 3.7 响应者链
