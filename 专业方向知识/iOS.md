@@ -24,13 +24,13 @@
 
 + [3. UIKit](#3-uikit)
 
-+ [. 通知]
++ [4. 通知](#4-通知)
 
-+ [. 数据持久化]
++ [5. 数据持久化](#5-数据持久化)
 
-+ [. CocoaPods]
++ [6. CocoaPods](#6-cocoapods)
 
-+ [. 第三方库]
++ [7. 第三方库](#7-第三方库)
 
 ## Objective-C
 
@@ -1176,3 +1176,64 @@ NSLayoutConstraint中的 `constraintWithItem:attribute:relatedBy:toItem:attribut
 设定了两个视图之间的约束后，要将约束添加到两个视图最近的父视图中。
 
 #### 3.7 响应者链
+
+##### 3.7.1 基本概念
+
+iOS事件中最常见的就是 `触摸事件UITouch` ，iOS 中不是任何对象都能处理事件，只有继承 `UIResponder` 的对象才能接收并处理事件，称之为 `响应者对象` 。
+
+UIResponder 内部提供了以下方法来处理触摸事件：
+
++ `touchesBegan:withEvent:` 一根或者多根手指开始触摸view，系统会自动调用view的下面方法
++ `touchesMoved:withEvent:` 一根或者多根手指在view上移动，系统会自动调用view的下面方法，随着手指的移动，会持续调用该方法
++ `touchesEnded:withEvent:` 一根或者多根手指离开view，系统会自动调用view的下面方法
++ `touchesCancelled:withEvent:` 触摸结束前，某个系统事件，例如电话呼入，会打断触摸过程，系统会自动调用view的下面方法
+
+`响应者链ResponderChain` 就是用于确定事件响应者的一种机制，一个事件响应者的完成主要经过两个过程： 1、hitTest 方法首先从顶部 UIApplication 自上而下，直到找到命中者；2、从命中者视图沿着响应者链往上传递寻找可以进行响应的响应者。
+
+![ResponderChain](img/ResponderChain.svg)
+
+##### 3.7.2 hitTest
+
+hitTest的默认流程：
+
+```objective-c
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event
+{
+    // 如果未开启交互，或者透明度小于 0.05 或者 视图被隐藏
+    if (self.userInteractionEnabled == NO || self.alpha < 0.05 || self.hidden == YES)
+    {
+        return nil;
+    }
+    // 如果 touch 的 point 在 self 的 bounds 内
+    if ([self pointInside:point withEvent:event])
+    {
+        for (UIView *subView in self.subviews)
+        {
+            //进行坐标转化
+            CGPoint coverPoint = [subView convertPoint:point fromView:self];
+
+            // 调用子视图的 hitTest 重复上面的步骤。找到了，返回 hitTestView ,没找到返回有自身处理
+            UIView *hitTestView = [subView hitTest:coverPoint withEvent:event];
+            if (hitTestView)
+            {
+                return hitTestView;
+            }
+        }
+        return self;
+    }
+    return nil;
+}
+```
+
+默认流程本质上就是基于 “触点是否在当前View中” 进行剪枝的 `DFS` 搜索，但有时候这种剪枝也不一定能得到正确的结果：
+![hitTest_problem](img/hitTest_problem.svg)
+
+因此有些复杂场景是需要自定义的hitTest才能得到想要的响应效果。
+
+### 4 通知
+
+### 5 数据持久化
+
+### 6 CocoaPods
+
+### 7 第三方库
