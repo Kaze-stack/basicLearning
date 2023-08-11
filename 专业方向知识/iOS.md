@@ -271,7 +271,7 @@ KVC是Key-Value-Coding的缩写，即键值编码，KVC提供了一种间接访�
 
 ##### 2.7.2 KVO
 
-KVO是Key-Value-Observing的缩写，即键值监听，KVO提供了一套基于观察者模式的事件通知机制。KVO和NSNotificationCenter都是观察者模式的一种实现，区别在于，NSNotificationCenter可以是一对多的关系，而KVO是一对一的。
+KVO是Key-Value-Observing的缩写，即键值监听，KVO提供了一套基于观察者模式的事件通知机制。KVO可以是一对一、一对多的。
 
 + KVO使用
   + 注册监听 `addObserver:forKeyPath:options:context:`
