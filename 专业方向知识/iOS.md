@@ -803,8 +803,6 @@ NSOperation是一个抽象类，不能直接使用。
 
 ### 6 运行时Runtime
 
-> 可以对比阅读Swift的 运行时 部分
-
 ---
 
 ## Swift
