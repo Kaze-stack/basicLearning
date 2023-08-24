@@ -287,7 +287,7 @@ KVO是Key-Value-Observing的缩写，即键值监听，KVO提供了一套基于�
     + 调用 `willChangeValueForKey:` 方法
     + 调用 `父类` 即对象A的 `setter` 方法
     + 调用 `didChangeValueForKey` 方法，并触发监听回调
-    ![KVO的实现](img/KVO_impelment.webp)
+    ![KVO的实现](../img/iOS/KVO_impelment.webp)
 
 ### 3 引用计数
 
@@ -431,22 +431,22 @@ int main(int argc, const char * argv[]) {
 + `weak_entry_t` 在存储的弱引用的个数小于4的时候，使用的是内联数组 `inline_referrers[]` ，每次需要删除某一个弱引用时，都会对数组进行遍历，查找到该引用进行置 `nil` ，需要添加时，会遍历此数组，看有没有空位，若有就赋值，若没有就代表此内联的数组已经满了，把内联数组转成哈希表，哈希表的默认长度为8。 `weak_entry_t` 中 `out_of_line_ness` 用来标记是否使用内联数组。
 + 对象释放时，若存在弱引用，调用 `weak_clear_no_lock(weak_table_t *weak_table, id referent_id)` 根据对象地址获取所有weak指针的地址数组 `weak_entry` ，然后遍历这个数组把其中的数据设为 `nil` ，最后把这个 `weak_entry` 从 `weak_table` 中删除，最后清理对象的记录。
 
-![ARC_weak](img/ARC_weak.svg)
+![ARC_weak](../img/iOS/ARC_weak.svg)
 
 #### 3.4 循环引用
 
 #### 3.4.1 类之间相互引用
 
 由于OC中指针默认为强引用，如果类之间存在引用关系，就可能产生下面这种循环引用，表面上指针已经置 `nil` ，但实际上各自的引用计数为 `1` ，对象所占的空间无法释放，造成内存泄漏。
-![RetainCycle](img/RetainCycle.svg)
+![RetainCycle](../img/iOS/RetainCycle.svg)
 
 可以使用 `__weak` 或 `__unsafe_retained` 来解决类之间的循环引用，但考虑到编写程序时的安全性，还是推荐使用 `__weak` 。
-![RetainCycle_solve](img/RetainCycle_solve.svg)
+![RetainCycle_solve](../img/iOS/RetainCycle_solve.svg)
 
 #### 3.4.2 block内的self引用
 
 若类存在block属性，且block中有 `self` 的强引用时，也会产生循环引用。
-![RetainCycle_block](img/RetainCycle_block.svg)
+![RetainCycle_block](../img/iOS/RetainCycle_block.svg)
 
 为了解决这个问题，可以传一份 `self` 的弱引用进入block：
 
@@ -523,7 +523,7 @@ qBlock();
 
 block本质上也是一个OC对象，它内部也有个isa指针，它封装了函数调用以及函数调用环境。
 block的底层结构如下图所示：
-![Block_DS](img/Block_DS.svg)
+![Block_DS](../img/iOS/Block_DS.svg)
 
 #### 4.4 Block类型
 
@@ -836,7 +836,7 @@ iOS应用程序的启动主要分为两个类型：**冷启动** 和 **热启动
 
 >讨论启动过程时，一般指的是 _冷启动_
 
-![App_load](img/App_load.svg)
+![App_load](../img/iOS/App_load.svg)
 
 其中从 `dyld3` 到 `Initializers` 都是 `dyld` 的运行过程。
 >启动闭包即为App创建内存中的缓存信息，是dyld3新增的功能，可用于内存清理前的下一次App启动
@@ -911,7 +911,7 @@ OC数组只能存放 **对象** ，无法存放 **基本数据类型**
 
 `NSMutableArray` 为了能够在随机位置的 `insert` 和 `remove` 操作下也能保持一个较高的效率，底层采用了 `环形缓冲区(Circular Buffer)` ，也被称为 `环形队列(Circular Queue)` 。每次插入或删除时，可以选择更靠近端的一侧进行 `memmove` ，充分利用空间并减少元素移动的开销。
 
-![Circular Buffer](img/CFArray_CircularBuffer.svg)
+![Circular Buffer](../img/iOS/CFArray_CircularBuffer.svg)
 
 ##### 1.2.3 集合(Set)
 
@@ -980,7 +980,7 @@ Apple并不允许直接创建Runloop，只能通过 `[NSRunLoop currentRunLoop]`
 
 #### 2.3 Runloop的结构
 
-![RunloopDataStruct](img/Runloop_struct.svg)
+![RunloopDataStruct](../img/iOS/Runloop_struct.svg)
 
 一个Runloop中包含了若干的 `Mode` ，但在实际运行时，只会选择其中一个，如果要切换，就需要先退出再选择一个Mode进入。这样能够有效地分隔不同组的Source/Observer/Timer，让其互不影响。
 
@@ -1055,7 +1055,7 @@ UIScrollview滑动的过程中，Runloop会先退出原来的Mode，切换到 `N
 
 #### 2.4 Runloop的运行
 
-![Runloop_Exec](img/Runloop_exec.webp)
+![Runloop_Exec](../img/iOS/Runloop_exec.webp)
 
 >关于这张图，网上大部分流传的版本中 **Source1(port)** 那块写的都是 **Source0(port)** ...
 
@@ -1090,18 +1090,18 @@ MVC即 `Model-View-Controller` ：
 MVC有两套经典的模型：
 
 **1、**
-![MVC_1](img/MVC_1.svg)
+![MVC_1](../img/iOS/MVC_1.svg)
 用户请求发送给Controller，Controller需要主动调用Model层的接口去取得实际需要的数据对象，之后将数据发送给需要的View，View渲染之后返回页面给用户。
 >在这种情况下，Controller往往会比较大，因为它要知道需要调用哪个Model的接口获取数据对象，还需要知道要把数据对象发送给哪个View去渲染；View和Model都比较简单纯粹，它们都只需要被动地根据Controller的要求完成它们自己的任务就好了。
 
 **2、**
-![MVC_2](img/MVC_2.svg)
+![MVC_2](../img/iOS/MVC_2.svg)
 用户请求发送给Controller，Controller调用Model的接口发起数据更新操作，接着就直接转向需要的View；View会调用Model去取得经过Controller更新以后的最新数据，渲染并返回给用户。
 >这种情况下，Controller相对就会比较简单，而这里写操作是由Controller发起的，读操作是由View发起的，二者的业务对象模型可以不相同，非常适合需要 _命令查询职责分离_ 的场景，
 
 ##### 3.1.2 UIKit的MVC
 
-![CS193p_MVC](img/CS193p_MVC.jpeg)
+![CS193p_MVC](../img/iOS/CS193p_MVC.jpeg)
 从斯坦福CS193p公开课的一张经典例图可以看出，UIKit中的MVC是类似于第一套经典模型的。
 
 + View通过 `代理delegate` 和 `数据源data source` 实现了与Controller的通信
@@ -1123,7 +1123,7 @@ MVC有两套经典的模型：
 
 ##### 3.2.2 UIViewController生命周期
 
-![UIViewCOntroller](img/UIViewController_lifecycle.svg)
+![UIViewCOntroller](../img/iOS/UIViewController_lifecycle.svg)
 UIViewController的生命周期里包含了UIView的生命周期，图中红色部分就是UIView的生命周期
 
 #### 3.3 Interface Builder
@@ -1167,7 +1167,7 @@ UITableView是UIKit中常用的表格视图
 UITableViewCell就是表格中的单元，如果没有复用机制的话，一份稍微长一点的表格就需要不断创建和销毁Cell，可能存在性能问题和潜在的内存泄漏。
 
 Cell复用的机制类似于对象池，通过 `Identifier` 来指定一个池子，从中复用对象。
-![Cell_reuse](img/Cell_reuse.svg)
+![Cell_reuse](../img/iOS/Cell_reuse.svg)
 
 >考虑到实际的读取速度和Cell的显示，复用池内的Cell数量一般是比屏幕上能显示的个数要多一些的。
 
@@ -1227,7 +1227,7 @@ UIResponder 内部提供了以下方法来处理触摸事件：
 
 `响应者链ResponderChain` 就是用于确定事件响应者的一种机制，一个事件响应者的完成主要经过两个过程： 1、hitTest 方法首先从顶部 UIApplication 自上而下，直到找到命中者；2、从命中者视图沿着响应者链往上传递寻找可以进行响应的响应者。
 
-![ResponderChain](img/ResponderChain.svg)
+![ResponderChain](../img/iOS/ResponderChain.svg)
 
 ##### 3.7.2 hitTest
 
@@ -1263,7 +1263,7 @@ hitTest的默认流程：
 ```
 
 默认流程本质上就是基于 “触点是否在当前View中” 进行剪枝的 `DFS` 搜索，但有时候这种剪枝也不一定能得到正确的结果：
-![hitTest_problem](img/hitTest_problem.svg)
+![hitTest_problem](../img/iOS/hitTest_problem.svg)
 
 因此有些复杂场景是需要自定义的hitTest才能得到想要的响应效果。
 
@@ -1369,7 +1369,7 @@ iOS每个App都有自己的存储空间，这个存储空间叫做 `沙盒` ， 
 | 特点 | 直接使用SQL语句进行查询 | 通过封装的方法进行查询<br>是一种具有ORM的数据库 |
 | 缺点 | SQL语句是字符串类型，没有编译期检查 | 存在一定的性能问题<br>难以处理复杂的查询 |
 
->CoreData层次结构：<br>![CoreData_DS](img/CoreData_DS.png)<br>
+>CoreData层次结构：<br>![CoreData_DS](../img/iOS/CoreData_DS.png)<br>
 >CoreData是两级存储结构，其中 _Context_ 负责数据的操作，并缓存数据到内存，等待同步到磁盘； _Store_ 即数据库，可能是SQLite也可能是 _XML_ 或 _binary_ ； _Coordinator_ 为数据解析，将数据库内容解析为模型。
 
 ### 6 依赖管理工具
