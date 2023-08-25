@@ -264,11 +264,11 @@ KVC是Key-Value-Coding的缩写，即键值编码，KVC提供了一种间接访�
 
 ###### KVC写方法流程
 
-![KVC写方法流程](/专业方向知识/img/KVC_write.jpg)
+![KVC写方法流程](../img/iOS/KVC_write.jpg)
 
 ###### KVC读方法流程
 
-![KVC读方法流程](/专业方向知识/img/KVC_read.jpg)
+![KVC读方法流程](../img/iOS/KVC_read.jpg)
 
 ##### 2.7.2 KVO
 
